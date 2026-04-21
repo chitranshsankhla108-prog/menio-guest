@@ -152,20 +152,20 @@ export function CafeProvider({ children }: { children: React.ReactNode }) {
     };
   }, [authLoading]);
 
-  // FIXED: Changed .toUpperCase() to .toLowerCase() to match Supabase database
   const setCafeByCode = useCallback(async (code: string): Promise<boolean> => {
     setError(null);
     setIsLoading(true);
     
     try {
-      const normalizedCode = code.trim().toLowerCase(); 
+      // FIX 1: Use toUpperCase() since your Supabase database uses uppercase codes like AMS01
+      const normalizedCode = code.trim().toUpperCase(); 
       
       // 4. CHANGED TO SELECT ALL COLUMNS (*)
       const { data, error: fetchError } = await supabase
         .from('cafes')
         .select('*')
         .eq('code', normalizedCode)
-        .single();
+        .maybeSingle(); // FIX 2: Swapped .single() to .maybeSingle() to prevent the 406 Crash
       
       if (fetchError || !data) {
         setError('Invalid cafe code. Please check and try again.');
