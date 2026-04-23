@@ -17,7 +17,7 @@ import {
   BadgeCheck,
   Menu as MenuIcon 
 } from 'lucide-react';
-import { useMenuItems, MenuCategory, MenuItem } from '@/hooks/useMenuItems';
+import { useMenuItems, MenuItem } from '@/hooks/useMenuItems';
 import { useCreateOrder, OrderItem } from '@/hooks/useOrders';
 import { useAuth } from '@/hooks/useAuth';
 import { useCart } from '@/hooks/useCart';
@@ -42,19 +42,18 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-const categoryIcons: Record<MenuCategory, React.ElementType> = {
+// FIX 1: Changed to Record<string, ...> to support dynamic custom categories
+const categoryIcons: Record<string, React.ElementType> = {
   Drinks: Coffee,
   Snacks: Cookie,
   Meals: UtensilsCrossed,
 };
 
-const categoryEmojis: Record<MenuCategory, string> = {
+const categoryEmojis: Record<string, string> = {
   Drinks: '☕',
   Snacks: '🍪',
   Meals: '🍛',
 };
-
-const categories: MenuCategory[] = ['Drinks', 'Snacks', 'Meals'];
 
 export function PublicMenu() {
   const navigate = useNavigate();
@@ -80,11 +79,19 @@ export function PublicMenu() {
     getCartItemCount,
     checkCafeMismatch
   } = useCart();
+
+  // FIX 2: Generate Dynamic Categories straight from the database
+  const dynamicCategories = useMemo(() => {
+    const fetchedCategories = menuItems.map(item => item.category);
+    // Keep the main 3 at the top, then append any custom ones
+    const combined = Array.from(new Set(['Drinks', 'Snacks', 'Meals', ...fetchedCategories]));
+    return combined.filter(Boolean); 
+  }, [menuItems]);
   
-  const [expandedCategories, setExpandedCategories] = useState<MenuCategory[]>(categories);
+  // Start with empty array, then expand all once categories load
+  const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  
   const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
 
   // States for the Bill Modal & Receipt Transition
@@ -104,6 +111,13 @@ export function PublicMenu() {
     }
   }, [cafe?.id, checkCafeMismatch]);
 
+  // Auto-expand all dynamic categories when they load
+  useEffect(() => {
+    if (dynamicCategories.length > 0 && expandedCategories.length === 0) {
+      setExpandedCategories(dynamicCategories);
+    }
+  }, [dynamicCategories, expandedCategories.length]);
+
   const filteredMenuItems = useMemo(() => {
     if (!searchQuery.trim()) return menuItems;
     const query = searchQuery.toLowerCase();
@@ -113,7 +127,7 @@ export function PublicMenu() {
     );
   }, [menuItems, searchQuery]);
 
-  const toggleCategory = (cat: MenuCategory) => {
+  const toggleCategory = (cat: string) => {
     setExpandedCategories((prev) =>
       prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
     );
@@ -122,8 +136,8 @@ export function PublicMenu() {
   const scrollToCategory = (cat: string) => {
     setIsCategoryMenuOpen(false);
     
-    if (!expandedCategories.includes(cat as MenuCategory)) {
-      setExpandedCategories((prev) => [...prev, cat as MenuCategory]);
+    if (!expandedCategories.includes(cat)) {
+      setExpandedCategories((prev) => [...prev, cat]);
     }
 
     setTimeout(() => {
@@ -175,7 +189,6 @@ export function PublicMenu() {
             special_instructions: specialInstructions,
           };
           
-          // Save order data, total, and trigger Modal
           setPlacedOrderData(orderData);
           setPlacedOrderTotal(cartTotal);
           setIsOrderDone(true);
@@ -183,8 +196,8 @@ export function PublicMenu() {
           setCartOpen(false);
           clearCart();
           
-          toast.success(t('order.placed'), {
-            description: t('order.showAtCounter'),
+          toast.success(t('order.placed') || 'Order Placed!', {
+            description: t('order.showAtCounter') || 'Show this at the counter',
             duration: 3000,
           });
         } 
@@ -192,12 +205,12 @@ export function PublicMenu() {
     );
   };
 
-  const getCategoryLabel = (cat: MenuCategory) => {
+  const getCategoryLabel = (cat: string) => {
     switch (cat) {
-      case 'Drinks': return t('menu.drinks');
-      case 'Snacks': return t('menu.snacks');
-      case 'Meals': return t('menu.meals');
-      default: return cat;
+      case 'Drinks': return t('menu.drinks') || 'Drinks';
+      case 'Snacks': return t('menu.snacks') || 'Snacks';
+      case 'Meals': return t('menu.meals') || 'Meals';
+      default: return cat; // Returns custom category name directly
     }
   };
 
@@ -252,7 +265,7 @@ export function PublicMenu() {
       {/* STICKY SEARCH BAR */}
       <div className="sticky top-0 z-30 bg-[#F4EDE4]/90 backdrop-blur-xl px-4 py-4 max-w-lg mx-auto">
         <div className="relative group">
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6F4E37]/60" />
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6F4E37]/60 pointer-events-none" />
           <Input 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -271,7 +284,7 @@ export function PublicMenu() {
       </div>
 
       <main className="max-w-lg mx-auto p-4 space-y-8">
-        {categories.map((cat) => {
+        {dynamicCategories.map((cat) => {
           const items = filteredMenuItems.filter((item) => item.category === cat);
           const isExpanded = expandedCategories.includes(cat);
 
@@ -289,7 +302,7 @@ export function PublicMenu() {
                   <div className="h-[1px] w-12 bg-[#F9E0E3] group-hover:bg-[#FFD6C9] group-hover:w-24 transition-all duration-300" />
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-[9px] text-[#6F4E37] font-bold uppercase tracking-widest">{items.length} {t('menu.available')}</span>
+                  <span className="text-[9px] text-[#6F4E37] font-bold uppercase tracking-widest">{items.length} {t('menu.available') || 'Available'}</span>
                   <ChevronDown className={cn('w-4 h-4 text-[#6F4E37] transition-transform duration-300', isExpanded && 'rotate-180')} />
                 </div>
               </button>
@@ -299,7 +312,8 @@ export function PublicMenu() {
                   {items.map((item) => {
                     const quantity = getItemQuantity(item.id);
                     const isSoldOut = !item.is_available;
-                    const ItemIcon = categoryIcons[item.category];
+                    // FIX: Safe fallback to Coffee icon if custom category doesn't have an icon
+                    const ItemIcon = categoryIcons[item.category] || Coffee;
                     
                     return (
                       <Card 
@@ -349,7 +363,7 @@ export function PublicMenu() {
                                 <p className="font-black text-[15px] text-[#6F4E37] tracking-tighter">₹{item.price}</p>
                                 
                                 {!isSoldOut && canOrder && (
-                                  <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                                     {quantity > 0 ? (
                                       <div className="flex items-center gap-2 bg-[#F9E0E3]/40 p-1 rounded-full border border-[#F9E0E3]">
                                         <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:bg-white" onClick={() => updateQuantity(item.id, quantity - 1)}>
@@ -404,7 +418,7 @@ export function PublicMenu() {
       <Dialog open={isCategoryMenuOpen} onOpenChange={setIsCategoryMenuOpen}>
         <DialogContent className="w-[260px] rounded-2xl bg-[#3A2C2C]/95 backdrop-blur-xl border border-white/10 p-2 mb-28 fixed bottom-0 top-auto right-4 left-auto shadow-2xl">
           <div className="flex flex-col">
-            {categories.map((cat) => {
+            {dynamicCategories.map((cat) => {
               const count = menuItems.filter(i => i.category === cat).length;
               if (count === 0) return null;
               
@@ -526,7 +540,7 @@ export function PublicMenu() {
                          </Button>
                          <p className="text-[9px] text-center text-[#6F4E37] font-bold uppercase tracking-[0.3em] pt-4 flex items-center justify-center">
                            <BadgeCheck className="w-3 h-3 mr-1.5" />
-                           {t('cart.payAtCounter')}
+                           {t('cart.payAtCounter') || 'Pay at Counter'}
                          </p>
                       </div>
                     </div>
