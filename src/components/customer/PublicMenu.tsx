@@ -18,7 +18,8 @@ import {
   Menu as MenuIcon 
 } from 'lucide-react';
 import { useMenuItems, MenuItem } from '@/hooks/useMenuItems';
-import { useCreateOrder, OrderItem } from '@/hooks/useOrders';
+// FIXED: Added useOrders to the import
+import { useCreateOrder, useOrders, OrderItem } from '@/hooks/useOrders';
 import { useAuth } from '@/hooks/useAuth';
 import { useCart } from '@/hooks/useCart';
 import { useCafe } from '@/contexts/CafeContext';
@@ -42,7 +43,6 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-// FIX 1: Changed to Record<string, ...> to support dynamic custom categories
 const categoryIcons: Record<string, React.ElementType> = {
   Drinks: Coffee,
   Snacks: Cookie,
@@ -59,6 +59,8 @@ export function PublicMenu() {
   const navigate = useNavigate();
   const { data: menuItems = [], isLoading } = useMenuItems();
   const createOrder = useCreateOrder();
+  // FIXED: Fetch existing orders to check for table locks
+  const { data: existingOrders = [] } = useOrders();
   const { isStaff } = useAuth();
   const { cafe, isLoading: cafeLoading } = useCafe();
   const { t } = useLanguage();
@@ -80,21 +82,17 @@ export function PublicMenu() {
     checkCafeMismatch
   } = useCart();
 
-  // FIX 2: Generate Dynamic Categories straight from the database
   const dynamicCategories = useMemo(() => {
     const fetchedCategories = menuItems.map(item => item.category);
-    // Keep the main 3 at the top, then append any custom ones
     const combined = Array.from(new Set(['Drinks', 'Snacks', 'Meals', ...fetchedCategories]));
     return combined.filter(Boolean); 
   }, [menuItems]);
   
-  // Start with empty array, then expand all once categories load
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
 
-  // States for the Bill Modal & Receipt Transition
   const [isOrderDone, setIsOrderDone] = useState(false);
   const [placedOrderTotal, setPlacedOrderTotal] = useState(0);
   const [placedOrderData, setPlacedOrderData] = useState<any>(null);
@@ -111,7 +109,6 @@ export function PublicMenu() {
     }
   }, [cafe?.id, checkCafeMismatch]);
 
-  // Auto-expand all dynamic categories when they load
   useEffect(() => {
     if (dynamicCategories.length > 0 && expandedCategories.length === 0) {
       setExpandedCategories(dynamicCategories);
@@ -126,6 +123,17 @@ export function PublicMenu() {
       (item.description && item.description.toLowerCase().includes(query))
     );
   }, [menuItems, searchQuery]);
+
+  // NEW: Table Lock Logic
+  const isTableLocked = useMemo(() => {
+    if (!tableNumber.trim()) return false;
+    const normalizedInput = tableNumber.trim().toLowerCase();
+    
+    return existingOrders.some(order => 
+      order.table_number?.toLowerCase() === normalizedInput && 
+      ['requested', 'pending', 'preparing'].includes(order.status)
+    );
+  }, [existingOrders, tableNumber]);
 
   const toggleCategory = (cat: string) => {
     setExpandedCategories((prev) =>
@@ -176,6 +184,7 @@ export function PublicMenu() {
         customer_name: customerName.trim() || undefined,
         table_number: tableNumber.trim(),
         special_instructions: specialInstructions?.trim() || undefined,
+        status: 'requested' // Keep the Staff Verification status!
       },
       { 
         onSuccess: (data) => {
@@ -210,7 +219,7 @@ export function PublicMenu() {
       case 'Drinks': return t('menu.drinks') || 'Drinks';
       case 'Snacks': return t('menu.snacks') || 'Snacks';
       case 'Meals': return t('menu.meals') || 'Meals';
-      default: return cat; // Returns custom category name directly
+      default: return cat;
     }
   };
 
@@ -312,7 +321,6 @@ export function PublicMenu() {
                   {items.map((item) => {
                     const quantity = getItemQuantity(item.id);
                     const isSoldOut = !item.is_available;
-                    // FIX: Safe fallback to Coffee icon if custom category doesn't have an icon
                     const ItemIcon = categoryIcons[item.category] || Coffee;
                     
                     return (
@@ -531,13 +539,24 @@ export function PublicMenu() {
                            <span className="text-4xl font-black text-[#3A2C2C] tracking-tighter">₹{cartTotal}</span>
                          </div>
 
-                         <Button 
-                           onClick={handlePlaceOrder} 
-                           className="w-full h-16 rounded-[2rem] bg-[#3A2C2C] text-white text-lg font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 hover:bg-[#6F4E37]" 
-                           disabled={createOrder.isPending}
-                         >
-                           {createOrder.isPending ? 'Processing...' : 'Confirm Order'}
-                         </Button>
+                         {/* NEW: Display the Table Locked UI or the Confirm Button */}
+                         {isTableLocked ? (
+                           <div className="w-full p-4 bg-[#FDF8F7] rounded-[2rem] border-2 border-dashed border-red-300 text-center shadow-sm">
+                             <p className="text-sm font-black text-[#3A2C2C] uppercase tracking-widest">Table Locked 🔒</p>
+                             <p className="text-[10px] text-[#6F4E37] uppercase font-bold mt-1.5 px-4 leading-relaxed">
+                               Table {tableNumber} already has an active order. Please ask staff if you want to add more items!
+                             </p>
+                           </div>
+                         ) : (
+                           <Button 
+                             onClick={handlePlaceOrder} 
+                             className="w-full h-16 rounded-[2rem] bg-[#3A2C2C] text-white text-lg font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 hover:bg-[#6F4E37]" 
+                             disabled={createOrder.isPending}
+                           >
+                             {createOrder.isPending ? 'Processing...' : 'Confirm Order'}
+                           </Button>
+                         )}
+
                          <p className="text-[9px] text-center text-[#6F4E37] font-bold uppercase tracking-[0.3em] pt-4 flex items-center justify-center">
                            <BadgeCheck className="w-3 h-3 mr-1.5" />
                            {t('cart.payAtCounter') || 'Pay at Counter'}

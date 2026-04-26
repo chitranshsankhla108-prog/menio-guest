@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { z } from 'zod';
 import { useCafe } from '@/contexts/CafeContext';
 
-export type OrderStatus = 'pending' | 'preparing' | 'completed' | 'cancelled';
+export type OrderStatus = 'pending' | 'preparing' | 'completed' | 'cancelled'|'requested';
 export type PaymentMethod = 'cash' | 'upi';
 export type PaymentStatus = 'unpaid' | 'paid';
 
@@ -211,6 +211,7 @@ export function useCreateOrder() {
       table_number: string; // Now required in the function call
       is_counter_order?: boolean;
       special_instructions?: string;
+      status?: OrderStatus;
     }) => {
       if (!cafe) throw new Error('No cafe selected');
 
